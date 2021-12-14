@@ -12,12 +12,13 @@ wamv: #namespace
       y_min: -5.0
 
     desired_point:
-      x: 30.0
+      x: 15.0
       y: 0.0
       z: 1.0
     desired_point_epsilon: 0.5
     max_distance_from_des_point: 30.0 # Maximum distance regitered in observations, has to be bigger than the largest distance of the workspace.
     
+    # Reserved digit number
     number_decimals_precision_obs: 1
 
     done_reward: 1000.0 # reward

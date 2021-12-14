@@ -10,7 +10,15 @@ from geometry_msgs.msg import Vector3
 class GazeboConnection():
 
     def __init__(self, start_init_physics_parameters, reset_world_or_sim, max_retry = 20):
-
+        '''
+        implement pause reset and set physics attribute functions
+        function and related api:
+        unpause service         : /gazebo/unpause_physics
+        pause                   : /gazebo/pause_physics
+        reset_simulation_proxy  : /gazebo/reset_simulation
+        reset_world_proxy       : /gazebo/reset_world
+        set_physics             : /gazebo/set_physics_properties
+        '''
         self._max_retry = max_retry
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)

@@ -4,9 +4,10 @@ import time
 from openai_ros import robot_gazebo_env
 from nav_msgs.msg import Odometry
 from openai_ros.openai_ros_common import ROSLauncher
+from std_msgs.msg import Float32
 
 
-class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
+class WamvDiffEnv(robot_gazebo_env.RobotGazeboEnv):
     """Superclass for all WamvEnv environments.
     """
 
@@ -27,7 +28,8 @@ class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
         * /wamv/odom: Odometry of the Base of Wamv
 
         Actuators Topic List:
-        * /cmd_drive: You publish the speed of the left and right propellers.
+        * /left_cmd : publish the speed of the left propeller.
+        * /right_cmd: publish the speed of the right propeller
 
         Args:
         """
@@ -36,11 +38,11 @@ class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
         # None in this case
 
         # We launch the ROSlaunch that spawns the robot into the world
-        ROSLauncher(rospackage_name="robotx_gazebo",
+        ROSLauncher(rospackage_name="rl_wamv",
                     launch_file_name="put_wamv_in_world.launch",
                     ros_ws_abspath=ros_ws_abspath)
 
-        from robotx_gazebo.msg import UsvDrive
+        from rl_wamv.msg import UsvDrive
 
         # Internal Vars
         # Doesnt have any accesibles
@@ -50,7 +52,7 @@ class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
         self.robot_name_space = ""
 
         # We launch the init function of the Parent Class robot_gazebo_env.RobotGazeboEnv
-        super(WamvEnv, self).__init__(controllers_list=self.controllers_list,
+        super(WamvDiffEnv, self).__init__(controllers_list=self.controllers_list,
                                             robot_name_space=self.robot_name_space,
                                             reset_controls=False,
                                             start_init_physics_parameters=False,
@@ -70,9 +72,12 @@ class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
 
 
         self.publishers_array = []
-        self._cmd_drive_pub = rospy.Publisher('/cmd_drive', UsvDrive, queue_size=1)
 
-        self.publishers_array.append(self._cmd_drive_pub)
+        self._cmd_drive_pub_left = rospy.Publisher('/wamv/thrusters/left_thrust_cmd', Float32, queue_size=1)
+        self._cmd_drive_pub_right = rospy.Publisher('/wamv/thrusters/right_thrust_cmd', Float32, queue_size=1)
+
+        self.publishers_array.append(self._cmd_drive_pub_left)
+        self.publishers_array.append(self._cmd_drive_pub_right)
 
         self._check_all_publishers_ready()
 
@@ -99,6 +104,9 @@ class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
     # ----------------------------
 
     def _check_all_sensors_ready(self):
+        '''
+        default setting will only check the wamv/odom
+        '''
         rospy.logdebug("START ALL SENSORS READY")
         self._check_odom_ready()
         rospy.logdebug("ALL SENSORS READY")
@@ -127,7 +135,7 @@ class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
         Checks that all the publishers are working
         :return:
         """
-        rospy.logdebug("START ALL SENSORS READY")
+        rospy.logdebug("START CHECK ALL SENSORS READY")
         for publisher_object in self.publishers_array:
             self._check_pub_connection(publisher_object)
         rospy.logdebug("ALL SENSORS READY")
@@ -187,15 +195,13 @@ class WamvEnv(robot_gazebo_env.RobotGazeboEnv):
         It will set the speed of each of the two proppelers of wamv.
         """
         i = 0
-        for publisher_object in self.publishers_array:
-            from robotx_gazebo.msg import UsvDrive
-            usv_drive_obj = UsvDrive()
-            usv_drive_obj.right = right_propeller_speed
-            usv_drive_obj.left = left_propeller_speed
+        rospy.logdebug("left and right propeller speeds are >>"+str(left_propeller_speed)+", "+str(right_propeller_speed))
 
-            rospy.logdebug("usv_drive_obj>>"+str(usv_drive_obj))
-            publisher_object.publish(usv_drive_obj)
-            i += 1
+        self._cmd_drive_pub_right.publish(right_propeller_speed)
+        self._cmd_drive_pub_left.publish(left_propeller_speed)
+
+
+        i += 1
         self.wait_time_for_execute_movement(time_sleep)
 
     def wait_time_for_execute_movement(self, time_sleep):
