@@ -1,3 +1,6 @@
+## Statements
+This repository contains the OpenAI ROS package, originally developed by The Construct on the Bitbucket.
+
 ## Install Dependencies
 
 Execute the following commands:<br>
