@@ -1,0 +1,44 @@
+wamv: #namespace
+    # -----------------------------------------------------
+    # atrributes of the usv
+    # -----------------------------------------------------
+    hull_length: 4.0
+    propeller_num: 2 # number of propellers
+    propeller_high_speed: 1.0 # High Propeller Speed             
+    propeller_low_speed: 0.2 # Low Propeller Speed
+
+    # -----------------------------------------------------
+    # attributes of the training area and the path
+    # -----------------------------------------------------
+    work_space: # 3D cube in which Drone is allowed to move
+      x_max: 65.0
+      x_min: -10.0
+      y_max: 20.0
+      y_min: -45.0
+
+    desired_point:
+      x: 55.0
+      y: -30.0
+      z: 0.0
+    desired_velocity: 2.0
+
+    predifined_trajectory: "/home/data/code/wxc/noetic_ws/src/openai_ros/openai_ros/src/openai_ros/task_envs/wamv_diff/data/trajectory/route_0.csv"
+
+    waypoint_distance_threshold: 1.0 # the distance threshold of the usv reach waypoint
+    max_distance_from_waypoint: 10.0 # Maximum distance regitered in observations, has to be bigger than the largest distance of the biggest length of the interval between trajectory points.
+    max_velocity_threshold: 2.25
+    
+    
+
+    # -----------------------------------------------------
+    # attributes of MDP problem
+    # -----------------------------------------------------
+    # Reserved digit number
+    number_decimals_precision_obs: 1
+    # reward
+    heading_epsilon: 0.1 # rad, the bonus threshold of usv heading
+    heading_reward: 0 # reward
+    velocity_epsilon: 0.5 # m/s, the bonus threshold of usv velocity
+    velocity_reward: 0
+    
+    other_situation_reward: -1 # reward of other situation

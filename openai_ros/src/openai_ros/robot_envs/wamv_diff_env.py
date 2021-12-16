@@ -31,6 +31,8 @@ class WamvDiffEnv(robot_gazebo_env.RobotGazeboEnv):
         * /left_cmd : publish the speed of the left propeller.
         * /right_cmd: publish the speed of the right propeller
 
+        Services List:
+        * gazebo/set_model_state for setting the initial pose of the model
         Args:
         """
         rospy.logdebug("Start WamvEnv INIT...")
@@ -80,6 +82,7 @@ class WamvDiffEnv(robot_gazebo_env.RobotGazeboEnv):
         self.publishers_array.append(self._cmd_drive_pub_right)
 
         self._check_all_publishers_ready()
+
 
         self.gazebo.pauseSim()
 
@@ -190,6 +193,17 @@ class WamvDiffEnv(robot_gazebo_env.RobotGazeboEnv):
 
     # Methods that the TrainingEnvironment will need.
     # ----------------------------
+
+    def set_model_state(self, ModelState):
+        # We start all the ROS related Services caller
+        # can set the inial pose of the robot
+        service_name='/gazebo/set_model_state'
+        rospy.logdebug("Waiting for service " + str(service_name))
+        rospy.wait_for_service(service_name)
+        rospy.logdebug("Service " + str(service_name) + " exists")
+        self.set_model_state = rospy.ServiceProxy(service_name, ModelState)
+        rospy.logdebug("Calling service " + str(service_name) + "Success!")
+
     def set_propellers_speed(self, right_propeller_speed, left_propeller_speed, time_sleep=1.0):
         """
         It will set the speed of each of the two proppelers of wamv.

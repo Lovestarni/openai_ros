@@ -223,7 +223,27 @@ def RegisterOpenAI_Ros_Env(task_env, max_episode_steps=10000):
         )
 
         # import our training environment
-        from openai_ros.task_envs.wamv_diff import wamv_nav_point
+        from openai_ros.task_envs.wamv_diff import wamv_nav_point_v1
+    elif task_env == 'WamvNavPoints-v0':
+
+        register(
+            id=task_env,
+            entry_point='openai_ros.task_envs.wamv_diff.wamv_nav_points_v0:WamvNavPointsEnv',
+            max_episode_steps=max_episode_steps,
+        )
+
+        # import our training environment
+        from openai_ros.task_envs.wamv_diff import wamv_nav_points_v0
+    elif task_env == 'WamvNavPoints-v1':
+
+        register(
+            id=task_env,
+            entry_point='openai_ros.task_envs.wamv_diff.wamv_nav_points_v1:WamvNavPointsEnv',
+            max_episode_steps=max_episode_steps,
+        )
+
+        # import our training environment
+        from openai_ros.task_envs.wamv_diff import wamv_nav_points_v1
     # Add here your Task Envs to be registered
     else:
         result = False

@@ -22,6 +22,8 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         Make Wamv learn how to move straight from The starting point
         to a desired point follow with series waypoints.
         Without wind noise.
+
+        * v1 changes: modifiy the reward function from negative reward to positive reward
         """
 
         # This is the path where the simulation files, the Task and the Robot gits will be downloaded if not there
@@ -277,9 +279,10 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         # TODO: 当前没有加入距离奖励，只有速度和角度奖励，后面可能要尝试加入距离奖励
         # If there has been a decrease in the distance to the desired point, we reward it
         if (self.current_heading_error <= self.heading_epsilon or self.current_heading_error <= self.previous_heading_error) and (self.current_volocity - self.desired_velocity <= self.velocity_epsilon):
-            reward = 0
+            reward = 1
         else:
-            reward = -1
+            # time punishment
+            reward = -0.01
         # TODO: 如果达成完成条件，惩罚失败，奖励成功
 
         rospy.logdebug("reward=" + str(reward))
