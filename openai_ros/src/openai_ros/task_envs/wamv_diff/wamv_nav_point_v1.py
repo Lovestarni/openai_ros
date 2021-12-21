@@ -352,7 +352,7 @@ class WamvNavPointEnv(wamv_diff_env.WamvDiffEnv):
         is_inside = False
 
         rospy.logwarn("##### INSIDE WORK SPACE? #######")
-        rospy.logwarn("XYZ current_position"+str(current_position))
+        rospy.logwarn("XYZ current_position "+str(current_position))
         rospy.logwarn("work_space_x_max"+str(self.work_space_x_max) +
                       ",work_space_x_min="+str(self.work_space_x_min))
         rospy.logwarn("work_space_y_max"+str(self.work_space_y_max) +

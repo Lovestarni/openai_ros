@@ -11,9 +11,9 @@ wamv: #namespace
     # attributes of the training area and the path
     # -----------------------------------------------------
     work_space: # 3D cube in which Drone is allowed to move
-      x_max: 65.0
-      x_min: -10.0
-      y_max: 20.0
+      x_max: 60.0
+      x_min: -5.0
+      y_max: 15.0
       y_min: -45.0
 
     desired_point:
@@ -22,7 +22,7 @@ wamv: #namespace
       z: 0.0
     desired_velocity: 2.0
 
-    predifined_trajectory: "/home/data/code/wxc/noetic_ws/src/openai_ros/openai_ros/src/openai_ros/task_envs/wamv_diff/data/trajectory/route_0.csv"
+    predifined_trajectory: "/home/data/code/wxc/noetic_ws/src/openai_ros/openai_ros/src/openai_ros/task_envs/wamv_diff/data/trajectory/route_1.csv"
 
     waypoint_distance_threshold: 1 # the distance threshold of the usv reach waypoint
     max_distance_from_waypoint: 8.0 # Maximum distance regitered in observations, has to be bigger than the largest distance of the biggest length of the interval between trajectory points.

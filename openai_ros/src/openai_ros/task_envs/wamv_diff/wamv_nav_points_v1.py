@@ -14,7 +14,10 @@ import os
 
 class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
     '''
-    nav_points_wamv_v0
+    nav_points_wamv_v1:
+    use ppo and modified reward function based on v0
+    simulate factor 2
+    control rate 5hz
     '''
 
     def __init__(self):
@@ -65,23 +68,10 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
             'wamv/max_velocity_threshold')
         # Get desired velocity
         self.desired_velocity = rospy.get_param('wamv/desired_velocity')
-
-        # Get Desired Point to Get
-        self.desired_point = Point()
-        self.desired_point.x = rospy.get_param("/wamv/desired_point/x")
-        self.desired_point.y = rospy.get_param("/wamv/desired_point/y")
-        self.desired_point.z = rospy.get_param("/wamv/desired_point/z")
-
         self.work_space_x_max = rospy.get_param("/wamv/work_space/x_max")
         self.work_space_x_min = rospy.get_param("/wamv/work_space/x_min")
         self.work_space_y_max = rospy.get_param("/wamv/work_space/y_max")
         self.work_space_y_min = rospy.get_param("/wamv/work_space/y_min")
-
-        # We create the action space, the diff model, speed for double propellers
-        # TODO: compare to semi-precision float binary16
-        self.action_space = spaces.Box(
-            low=np.array([-1*self.propeller_high_speed]*2), high=np.array([self.propeller_high_speed]*2))
-
         self.dec_obs = rospy.get_param("/wamv/number_decimals_precision_obs")
         # get the target path, set the current waypoint
         predifined_trajectory_file_path = rospy.get_param(
@@ -90,26 +80,35 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
             predifined_trajectory_file_path)
         self.current_waypoint_index = 0
 
+        # We create the action space, the diff model, speed for double propellers
+        # TODO: compare to semi-precision float binary16
+        self.action_space = spaces.Box(
+            low=np.array([-1*self.propeller_high_speed]*2), high=np.array([self.propeller_high_speed]*2))
+
+        
+
+        
+
         # We place the Maximum and minimum values of observations
-        # observation space is 
-        #                      heading_error, [0,3.14]
+        # observation space is
+        #                      heading_error, [-3.14,3.14]
         #                      velocity_error, [-max_volocity_threshold, max_volocity_threshold]
-        #                      distance_from_waypoints, [0, max_distance]
-        #                      current_velocity_x, [max_velocity_threshold, max_velocity_threshold]
-        #                      current_velocity_y, [max_velocity_threshold, max_velocity_threshold]
+        #                      distance_from_waypoints, [0, 1], current/max
+        #                      current_velocity_left, [propeller_high_speed, propeller_high_speed]
+        #                      current_velocity_right, [propeller_high_speed, propeller_high_speed]
         #                      current_heading, [-3.14, 3.14]
         #                      error between Last and current, [-3.14,3.14]
 
         high = np.array([3.14,
                          self.max_velocity_threshold,
-                         self.max_distance_from_waypoint,
+                         1,
                          self.max_velocity_threshold,
                          self.max_velocity_threshold,
                          3.14,
                          3.14
                          ])
 
-        low = np.array([0,
+        low = np.array([-3.14,
                         -1 * self.max_velocity_threshold,
                         0,
                         -1 * self.max_velocity_threshold,
@@ -130,6 +129,7 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         self.heading_reward = rospy.get_param("/wamv/heading_reward")
         self.velocity_epsilon = rospy.get_param("/wamv/velocity_epsilon")
         self.velocity_reward = rospy.get_param("/wamv/velocity_reward")
+        self.distance_epsilon = rospy.get_param("/wamv/distance_epsilon")
         self.other_situation_reward = rospy.get_param(
             "/wamv/other_situation_reward")
 
@@ -157,7 +157,8 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         :return:
         """
         # For waypoint Index
-        self.current_waypoint_index = 0
+        # start point is the firt waypoint where is the wamv inital position
+        self.current_waypoint_index = 1
         # For Info Purposes
         self.cumulated_reward = 0.0
         # We get the initial pose to mesure the distance from the desired point.
@@ -169,7 +170,8 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         _, _, current_yaw = self.get_orientation_euler(
             current_orientation_quat)
         current_volocity_linear = odom.twist.twist.linear
-        current_volocity = (current_volocity_linear.x**2 + current_volocity_linear.y**2)**(1/2)
+        current_volocity = (current_volocity_linear.x**2 +
+                            current_volocity_linear.y**2)**(1/2)
 
         # compute the distance between current point and waypoint
         self.previous_distance_from_waypoint = self.get_distance_from_waypoint(
@@ -178,10 +180,10 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         # compute the LOS angel
         self.previous_LOS_angel_from_waypoint = self.get_LOS_angel_from_waypoint(
             current_position)
-        
+
         # copute the heading error
         self.previous_heading_error = self.previous_LOS_angel_from_waypoint - current_yaw
-        
+
         # compute the velocity error
         self.previous_velocity_error = self.desired_velocity - current_volocity
 
@@ -191,15 +193,20 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         based on the action number given.
         :param action: The action integer that sets what movement to do next.
         """
-
-        rospy.logdebug("Start Set Action ==>"+str(action))
-
-        left_propeller_speed, right_propeller_speed = action[0], action[1]
+        # We convert the actions to speed movements to send to the wamv, 不允许负向转动
+        left_propeller_speed = (
+            action[0] - (-1)) * (self.propeller_high_speed/(1-(-1)))
+        right_propeller_speed = (
+            action[1] - (-1)) * (self.propeller_high_speed/(1-(-1)))
+        rospy.loginfo("Original velocity is " + str(action))
+        rospy.loginfo("Start Set Action ==>" +
+                      str(left_propeller_speed, )+str(right_propeller_speed))
 
         # We tell wamv the propeller speeds
+        # TODO: 这个频率注释是说为了给出计算距离误差和角度误差的时间，运行位置又在pausesim和unpasesim之间，所以应该也反应了实际的控制频率，如果我想加速仿真，这里的时间如果要保持一致，需要改变为和加速频率相同的倍数
         self.set_propellers_speed(right_propeller_speed,
                                   left_propeller_speed,
-                                  time_sleep=1.0)
+                                  time_sleep=0.1)
 
         rospy.logdebug("END Set Action ==>"+str(action))
 
@@ -218,16 +225,18 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         _, _, current_yaw = self.get_orientation_euler(
             current_orientation_quat)
         current_volocity_linear = odom.twist.twist.linear
-        self.current_volocity = (current_volocity_linear.x**2 + current_volocity_linear.y**2)**(1/2)
-        
+        self.current_volocity = (
+            current_volocity_linear.x**2 + current_volocity_linear.y**2)**(1/2)
+
         # base_volocity_angular_yaw = odom.twist.twist.angular.z
 
         # Compute the relative value of the current position
         self.current_distance_from_waypoint = self.get_distance_from_waypoint(
-            self.current_position)    
-        self.current_LOS_angel_from_waypoint  = self.get_LOS_angel_from_waypoint(self.current_position)
+            self.current_position)
+        self.current_LOS_angel_from_waypoint = self.get_LOS_angel_from_waypoint(
+            self.current_position)
         self.current_heading_error = self.current_LOS_angel_from_waypoint - current_yaw
-        self.current_volocity_error =  self.desired_velocity - self.current_volocity
+        self.current_volocity_error = self.desired_velocity - self.current_volocity
         # TODO: 检查heading和计算的LOS角是不是在一个坐标系
         observation = []
         observation.append(round(self.current_heading_error, self.dec_obs))
@@ -238,9 +247,11 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         observation.append(round(current_volocity_linear.x, self.dec_obs))
         observation.append(round(current_volocity_linear.y, self.dec_obs))
         observation.append(round(current_yaw, self.dec_obs))
-        observation.append(round(self.previous_heading_error - self.current_heading_error, self.dec_obs))
+        observation.append(round(self.previous_heading_error -
+                           self.current_heading_error, self.dec_obs))
         # observation.append(round(base_speed_angular_yaw, self.dec_obs))
-        return observation
+        rospy.loginfo(observation)
+        return np.array(observation)
 
     def _is_done(self, observations):
         """
@@ -263,8 +274,11 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
                 # not reach the destination
                 self.current_waypoint_index += 1
 
+        exceed_maximum_distance = self.current_distance_from_waypoint > self.max_distance_from_waypoint
+
         # determine if the episode is done
-        done = not(is_inside_corridor) or has_reached_des_point
+        done = not(
+            is_inside_corridor) or has_reached_des_point or exceed_maximum_distance
 
         return done
 
@@ -278,21 +292,51 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         # We only consider the plane, the fluctuation in z is due mainly to wave
         # TODO: 当前没有加入距离奖励，只有速度和角度奖励，后面可能要尝试加入距离奖励
         # If there has been a decrease in the distance to the desired point, we reward it
-        if (self.current_heading_error <= self.heading_epsilon or self.current_heading_error <= self.previous_heading_error) and (self.current_volocity - self.desired_velocity <= self.velocity_epsilon):
-            reward = 1
+        rospy.loginfo(self.current_heading_error)
+        rospy.loginfo('current heading error: ' +
+                      str(round(self.current_heading_error, self.dec_obs)))
+        rospy.loginfo('current volocity error: ' +
+                      str(round(self.current_volocity_error, self.dec_obs)))
+        rospy.loginfo('current distance from waypoint: ' +
+                      str(round(self.current_distance_from_waypoint, self.dec_obs)))
+        rospy.loginfo('current LOS angel from waypoint: ' +
+                      str(round(self.current_LOS_angel_from_waypoint, self.dec_obs)))
+
+        heading_weight = 1
+        distance_weight = 1
+        velocity_weight = 0.5
+
+        # 1. time punishment
+        reward = -0.01
+
+        # 2. heading reward
+        heading_reward = 1 if (abs(self.current_heading_error) <= self.heading_epsilon) or abs(
+            self.current_heading_error) < abs(self.previous_heading_error) else 0
+        # # 3. velocity reward
+        # velocity_reward = 0
+        velocity_reward = 1 if (abs(
+            self.current_volocity - self.desired_velocity) <= self.velocity_epsilon) else 0
+        # 4. distance reward, we want to minimize the distance to the desired point
+        # 如果距离waypoint的距离增大，则被惩罚
+        if done:
+            distance_reward = 0
         else:
-            # time punishment
-            reward = -0.01
+            distance_reward = -1 if (self.current_distance_from_waypoint -
+                                     self.previous_distance_from_waypoint) >= self.distance_epsilon else 0
+
+        reward += heading_weight * heading_reward + distance_weight * \
+            distance_reward + velocity_weight * velocity_reward
+
         # TODO: 如果达成完成条件，惩罚失败，奖励成功
 
-        rospy.logdebug("reward=" + str(reward))
+        rospy.loginfo("reward=" + str(reward))
         self.cumulated_reward += reward
-        rospy.logdebug("Cumulated_reward=" + str(self.cumulated_reward))
+        rospy.loginfo("Cumulated_reward=" + str(self.cumulated_reward))
         self.cumulated_steps += 1
-        rospy.logdebug("Cumulated_steps=" + str(self.cumulated_steps))
+        rospy.loginfo("Cumulated_steps=" + str(self.cumulated_steps))
 
         # if not done, save the current infomation
-        if not done:  
+        if not done:
             self.previous_distance_from_waypoint = self.current_distance_from_waypoint
             self.previous_LOS_angel_from_waypoint = self.current_LOS_angel_from_waypoint
             self.previous_heading_error = self.current_heading_error
@@ -302,7 +346,8 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
 
     # Internal TaskEnv Methods
     def get_waypoint_position(self):
-        assert 0 <= self.current_waypoint_index < len(self.predifined_trajectory)
+        assert 0 <= self.current_waypoint_index < len(
+            self.predifined_trajectory)
         return self.predifined_trajectory[self.current_waypoint_index]
 
     def is_in_waypoint_position(self, current_position, epsilon=0.05):
@@ -406,13 +451,14 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         """
         is_inside = False
 
-        rospy.logwarn("##### INSIDE WORK SPACE? #######")
-        rospy.logwarn("XYZ current_position"+str(current_position))
-        rospy.logwarn("work_space_x_max"+str(self.work_space_x_max) +
-                      ",work_space_x_min="+str(self.work_space_x_min))
-        rospy.logwarn("work_space_y_max"+str(self.work_space_y_max) +
-                      ",work_space_y_min="+str(self.work_space_y_min))
-        rospy.logwarn("############")
+        # rospy.logdebug("##### INSIDE WORK SPACE? #######")
+        rospy.loginfo("current waypoint \n"+str(self.get_waypoint_position()))
+        rospy.loginfo("XYZ current_position \n"+str(current_position))
+        # rospy.logdebug("work_space_x_max"+str(self.work_space_x_max) +
+        #   ",work_space_x_min="+str(self.work_space_x_min))
+        # rospy.logdebug("work_space_y_max"+str(self.work_space_y_max) +
+        #   ",work_space_y_min="+str(self.work_space_y_min))
+        # rospy.logdebug("############")
 
         if current_position.x > self.work_space_x_min and current_position.x <= self.work_space_x_max:
             if current_position.y > self.work_space_y_min and current_position.y <= self.work_space_y_max:
