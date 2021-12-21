@@ -131,7 +131,7 @@ class GazeboConnection():
         self._time_step = Float64(0.001)
         # set the simulation rate to 2x real-time
         # 1000 is same as real-time
-        self._max_update_rate = Float64(5000.0)
+        self._max_update_rate = Float64(2000.0)
 
         self._gravity = Vector3()
         self._gravity.x = 0.0

@@ -15,9 +15,9 @@ import os
 class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
     '''
     nav_points_wamv_v2:
-    use sac and modified reward function based on v0
-    simulator factor 5
-    control rate 2hz
+    use ppo and modified reward function based on v1
+    simulator factor 2
+    control rate 5hz
     '''
 
     def __init__(self):
@@ -28,7 +28,7 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
 
         * v1 changes: modifiy the reward function from negative reward to positive reward
 
-        * v2 changes: modify the control rate to 2hz
+        * v2 changes: same as v1, for route 1
         """
 
         # This is the path where the simulation files, the Task and the Robot gits will be downloaded if not there
@@ -282,7 +282,7 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         """
 
         # We only consider the plane, the fluctuation in z is due mainly to wave
-        # TODO: 当前没有加入距离奖励，只有速度和角度奖励，后面可能要尝试加入距离奖励
+        # TODO: 修改为指数函数形式，查看结果
         # If there has been a decrease in the distance to the desired point, we reward it
         rospy.loginfo(self.current_heading_error)
         rospy.loginfo('current heading error: ' + str(round(self.current_heading_error, self.dec_obs)))
@@ -301,7 +301,7 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         heading_reward = 1 if (abs(self.current_heading_error) <= self.heading_epsilon) or abs(self.current_heading_error) < abs(self.previous_heading_error) else 0
         # # 3. velocity reward
         # velocity_reward = 0
-        velocity_reward = 1 if (abs(self.current_volocity - self.desired_velocity) <= self.velocity_epsilon) else 0
+        velocity_reward = 1 if (abs(self.current_volocity - self.desired_velocity) <= self.velocity_epsilon) else -1
         # 4. distance reward, we want to minimize the distance to the desired point
         # 如果距离waypoint的距离增大，则被惩罚
         if done:
