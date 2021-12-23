@@ -1,6 +1,7 @@
 import pandas as pd
 from geometry_msgs.msg import Point
 import numpy as np
+import math
 
 def read_trajectory_to_points(file_path, dec=1):
     '''
@@ -11,6 +12,19 @@ def read_trajectory_to_points(file_path, dec=1):
     df = pd.read_csv(file_path)
     trajectory = [Point(x=round(row.x, dec), y=round(row.y, dec)) for row in df.itertuples()]
     return trajectory
+
+def angle_diff(source, target):
+    '''
+    Calculate the angle difference between two angles
+    :param source: source angle
+    :param target: target angle
+    '''
+    diff = target - source
+    if diff > math.pi:
+        diff -= 2 * math.pi
+    elif diff < -math.pi:
+        diff += 2 * math.pi
+    return diff
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+from math import atan2
 from openai_ros.robot_envs import wamv_diff_env
 import rospy
 import numpy as np
@@ -7,7 +8,7 @@ from geometry_msgs.msg import Vector3
 from tf.transformations import euler_from_quaternion
 from openai_ros.task_envs.task_commons import LoadYamlFileParamsTest
 from openai_ros.openai_ros_common import ROSLauncher
-from openai_ros.task_envs.wamv_diff.utils import trajectory_preprocess
+from openai_ros.task_envs.wamv_diff.utils.trajectory_preprocess import read_trajectory_to_points, angle_diff
 # import math
 import os
 
@@ -29,6 +30,12 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         * v1 changes: modifiy the reward function from negative reward to positive reward
 
         * v2 changes: same as v1, for route 1
+
+        * v3 changes: modified the velocity reward function
+                      correct the heading error compute part
+
+        * v4 changes: change the heading from the hull model heading to velocity direction
+                      
         """
 
         # This is the path where the simulation files, the Task and the Robot gits will be downloaded if not there
@@ -45,7 +52,7 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         # Load Params from the desired Yaml file
         LoadYamlFileParamsTest(rospackage_name="openai_ros",
                                rel_path_from_package_to_file="src/openai_ros/task_envs/wamv_diff/config",
-                               yaml_file_name="wamv_nav_points_v2.yaml")
+                               yaml_file_name="wamv_nav_points_v3.yaml")
 
         # Here we will add any init functions prior to starting the MyRobotEnv
         super(WamvNavPointsEnv, self).__init__(ros_ws_abspath)
@@ -78,8 +85,9 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         self.work_space_y_min = rospy.get_param("/wamv/work_space/y_min")
         predifined_trajectory_file_path = rospy.get_param(
             "/wamv/predifined_trajectory")
-        self.predifined_trajectory = trajectory_preprocess.read_trajectory_to_points(
-            predifined_trajectory_file_path)
+        self.control_interval = rospy.get_param("/wamv/control_interval")
+        self.heading_threshold = rospy.get_param('/wamv/heading_threshold')
+        self.predifined_trajectory = read_trajectory_to_points(predifined_trajectory_file_path)
         
 
         # We create the action space, the diff model, speed for double propellers
@@ -146,7 +154,7 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         right_propeller_speed = 0.0
         left_propeller_speed = 0.0
         self.set_propellers_speed(
-            right_propeller_speed, left_propeller_speed, time_sleep=0.2)
+            right_propeller_speed, left_propeller_speed, time_sleep=self.control_interval)
 
         return True
 
@@ -202,7 +210,7 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         # TODO: 这个频率注释是说为了给出计算距离误差和角度误差的时间，运行位置又在pausesim和unpasesim之间，所以应该也反应了实际的控制频率，如果我想加速仿真，这里的时间如果要保持一致，需要改变为和加速频率相同的倍数
         self.set_propellers_speed(right_propeller_speed,
                                   left_propeller_speed,
-                                  time_sleep=0.2)
+                                  time_sleep=self.control_interval)
 
         rospy.loginfo("END Set Action ==>"+str(action))
 
@@ -218,10 +226,10 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         odom = self.get_odom()
         self.current_position = odom.pose.pose.position
         current_orientation_quat = odom.pose.pose.orientation
-        _, _, current_yaw = self.get_orientation_euler(
-            current_orientation_quat)
+        # _, _, _ = self.get_orientation_euler(current_orientation_quat)
         current_volocity_linear = odom.twist.twist.linear
         self.current_volocity = (current_volocity_linear.x**2 + current_volocity_linear.y**2)**(1/2)
+        self.current_heading = self.get_heading_from_linear_velocity(current_volocity_linear)
         
         # base_volocity_angular_yaw = odom.twist.twist.angular.z
 
@@ -229,7 +237,8 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         self.current_distance_from_waypoint = self.get_distance_from_waypoint(
             self.current_position)    
         self.current_LOS_angel_from_waypoint  = self.get_LOS_angel_from_waypoint(self.current_position)
-        self.current_heading_error = self.current_LOS_angel_from_waypoint - current_yaw
+        # TODO:
+        self.current_heading_error = angle_diff(current_yaw, self.current_LOS_angel_from_waypoint)
         self.current_volocity_error =  self.desired_velocity - self.current_volocity
         # TODO: 检查heading和计算的LOS角是不是在一个坐标系
         observation = []
@@ -290,26 +299,35 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         rospy.loginfo('current distance from waypoint: ' + str(round(self.current_distance_from_waypoint, self.dec_obs)))
         rospy.loginfo('current LOS angel from waypoint: ' + str(round(self.current_LOS_angel_from_waypoint, self.dec_obs)))
 
-        heading_weight = 1
-        distance_weight = 1
-        velocity_weight = 0.5
+        heading_weight = 0.35
+        distance_weight = 0.35
+        velocity_weight = 0.25
+        time_weight = 0.05
         
         # 1. time punishment
-        reward = -0.01
+        time_reward = -1
 
         # 2. heading reward
-        heading_reward = 1 if (abs(self.current_heading_error) <= self.heading_epsilon) or abs(self.current_heading_error) < abs(self.previous_heading_error) else 0
+        if (abs(self.current_heading_error) <= self.heading_epsilon) or abs(self.current_heading_error) < abs(self.previous_heading_error):
+            heading_reward = 1  
+        elif abs(self.current_heading_error) > self.heading_threshold:
+            heading_reward = -1
+        else:
+            heading_reward = 0
         # # 3. velocity reward
         # velocity_reward = 0
         velocity_reward = 1 if (abs(self.current_volocity - self.desired_velocity) <= self.velocity_epsilon) else -1
         # 4. distance reward, we want to minimize the distance to the desired point
         # 如果距离waypoint的距离增大，则被惩罚
         if done:
+            # recompute when swith the waypoints
             distance_reward = 0
+        elif (self.current_distance_from_waypoint - self.previous_distance_from_waypoint) >= self.distance_epsilon:
+            distance_reward = -1
         else:
-            distance_reward = -1 if (self.current_distance_from_waypoint - self.previous_distance_from_waypoint) >= self.distance_epsilon else 0
+            distance_reward = 0
         
-        reward += heading_weight * heading_reward + distance_weight * distance_reward + velocity_weight * velocity_reward
+        reward = heading_weight * heading_reward + distance_weight * distance_reward + velocity_weight * velocity_reward + time_weight * time_reward
 
         # TODO: 如果达成完成条件，惩罚失败，奖励成功
 
@@ -417,6 +435,13 @@ class WamvNavPointsEnv(wamv_diff_env.WamvDiffEnv):
         los_angel = np.arctan2(b[1]-a[1], b[0]-a[0])
 
         return los_angel
+    
+    def get_heading_from_linear_velocity(self, linear_velocity):
+        '''
+        get current heading from the x and y velocity
+        linear_velocity need to have x and y velocity attributes
+        '''
+        return atan2(linear_velocity.y, linear_velocity.x)
 
     def get_orientation_euler(self, quaternion_vector):
         # We convert from quaternions to euler
